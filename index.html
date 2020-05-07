@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>切割线条</title>
+    <style type="text/css">
+        body, html {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+
+<body>
+<canvas style="width: 100%;height: 100%" id="container"></canvas>
+<script type="application/javascript">
+
+    class CutLine {
+        sx = 0; //起始点x
+        sy = 0; //起始点y
+        ex = 0; //终点x
+        ey = 0; //终点y
+        strokeWidth = 0; //线条宽度
+        strokeColor = 0; //线条颜色
+
+        constructor(option) {
+            this.strokeWidth = option.strokeWidth;
+            this.strokeColor = option.strokeColor;
+        }
+
+        updateStartPoint(x, y) {
+            this.sx = x;
+            this.sy = y;
+        }
+
+        updateEndPoint(x, y) {
+            this.ex = x;
+            this.ey = y;
+        }
+
+        draw(ctx) {
+            ctx.beginPath();
+            ctx.lineWidth = this.strokeWidth;
+            ctx.strokeStyle = this.strokeColor;
+            ctx.moveTo(this.sx, this.sy);
+            ctx.lineTo(this.ex, this.ey);
+            ctx.stroke();
+        }
+    }
+
+    class Shape {
+        cutLine = null;
+        isCut = false;
+        child = [];
+        hitChild = null;
+        oldX = 0;
+        oldY = 0;
+
+        constructor(option) {
+            this.cutLine = new CutLine({
+                strokeWidth: option.lineStrokeWidth,
+                strokeColor: option.lineStrokeColor
+            });
+        }
+
+        onTouchDown(event, ctx) {
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+            this.oldX = event.x;
+            this.oldY = event.y;
+            if (!this.isCut) {
+                this.cutLine.updateStartPoint(event.x, event.y);
+                this.drawSelf(ctx);
+            } else {
+                this.hitChild = this.hitTest(event);
+                this.drawChild(ctx);
+            }
+        }
+
+        onTouchMove(event, ctx) {
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+            if (this.isCut && this.hitChild) {
+                const x = event.x;
+                const y = event.y;
+                const deltaX = x - this.oldX;
+                const deltaY = y - this.oldY;
+                this.hitChild.x += deltaX;
+                this.hitChild.y += deltaY;
+                this.oldX = x;
+                this.oldY = y;
+            }
+
+            if (!this.isCut) {
+                this.cutLine.updateEndPoint(event.x, event.y);
+                this.cutLine.draw(ctx);
+                this.drawSelf(ctx);
+            } else {
+                this.drawChild(ctx);
+            }
+        }
+
+        onTouchUp(event, ctx) {
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        }
+
+        drawChild(ctx) {
+            if (this.child) {
+                this.child.forEach((shape) => {
+                    shape.draw(ctx);
+                });
+            }
+        }
+
+        cutShape(cutLine) {
+
+        }
+
+        drawSelf(ctx) {
+
+        }
+
+        hitTest(event) {
+            const x = event.x;
+            const y = event.y;
+            for (let i = this.child.length - 1; i >= 0; i--) {
+                const childShape = this.child[i];
+                if (x >= childShape.x && x <= childShape.x + childShape.w && y >= childShape.y && y <= childShape.y + childShape.h) {
+                    const image = childShape.image;
+                    if (!image) {
+                        continue;
+                    }
+                    const pxData = Utils.getPixel(image, x - childShape.x, y - childShape.y, childShape.w, childShape.h);
+                    if (pxData[3] < 1) {
+                        continue;
+                    }
+                    return childShape;
+                }
+            }
+        }
+    }
+
+    class ChildShape {
+
+        x = 0;
+        y = 0;
+        w = 0;
+        h = 0;
+        tumbnail = null;
+        image = null;
+
+        constructor(x, y, w, h, tumbnail) {
+            this.x = x;
+            this.y = y;
+            this.w = w;
+            this.h = h;
+            this.tumbnail = tumbnail;
+        }
+
+        draw(ctx) {
+            if (!this.image) {
+                const image = new Image();
+                image.onload = () => {
+                    this.image = image;
+                    ctx.drawImage(this.image, 0, 0, this.w, this.h, this.x, this.y, this.w, this.h);
+                };
+                image.src = this.tumbnail;
+            } else {
+                ctx.drawImage(this.image, 0, 0, this.w, this.h, this.x, this.y, this.w, this.h);
+            }
+        }
+    }
+
+    class Utils {
+
+        static cacheCanvas = null;
+
+        static getPixel(image, x, y, w, h) {
+            if (!Utils.cacheCanvas) {
+                Utils.cacheCanvas = document.createElement("canvas");
+            }
+            var ctx = Utils.cacheCanvas.getContext('2d');
+            Utils.cacheCanvas.width = w;
+            Utils.cacheCanvas.height = h;
+            ctx.drawImage(image, 0, 0);
+            return ctx.getImageData(x, y, 1, 1).data;
+        }
+
+        static toCircleDataURL(cr, angleStart, angleEnd, strokeColor, fillColor, lineWidth, anticlockwise = false) {
+            if (!Utils.cacheCanvas) {
+                Utils.cacheCanvas = document.createElement("canvas");
+            }
+            var ctx = Utils.cacheCanvas.getContext('2d');
+            ctx.clearRect(0, 0, Utils.cacheCanvas.width, Utils.cacheCanvas.height);
+            Utils.cacheCanvas.width = 2 * cr;
+            Utils.cacheCanvas.height = 2 * cr;
+            ctx.beginPath();
+            ctx.fillStyle = fillColor;
+            ctx.arc(cr, cr, cr - lineWidth / 2, angleStart, angleEnd, anticlockwise);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.lineWidth = lineWidth;
+            ctx.strokeStyle = strokeColor;
+            ctx.arc(cr, cr, cr - lineWidth / 2, angleStart, angleEnd, anticlockwise);
+            ctx.closePath();
+            ctx.stroke();
+            return Utils.cacheCanvas.toDataURL("image/png");
+        }
+
+        static toTriangleDataURL(a, b, c, p1, p2, fillColor, cutFillColor, strokeColor, lineWidth) {
+            if (!Utils.cacheCanvas) {
+                Utils.cacheCanvas = document.createElement("canvas");
+            }
+            var ctx = Utils.cacheCanvas.getContext('2d');
+            ctx.clearRect(0, 0, Utils.cacheCanvas.width, Utils.cacheCanvas.height);
+            const left = Math.min(Math.min(a.x, b.x), c.x);
+            const top = Math.min(Math.min(a.y, b.y), c.y);
+            const right = Math.max(Math.max(a.x, b.x), c.x);
+            const bottom = Math.max(Math.max(a.y, b.y), c.y);
+            Utils.cacheCanvas.width = right - left;
+            Utils.cacheCanvas.height = bottom - top;
+
+
+            const arrayPoint1s = [];
+            const arrayPoint2s = [];
+            arrayPoint1s.push({x: a.x, y: a.y});
+
+
+            if (Math.abs((p1.x - a.x) * (b.y - a.y) - (p1.y - a.y) * (b.x - a.x)) < 0.01) {
+                //p1点在ab上
+                arrayPoint1s.push({x: p1.x, y: p1.y});
+                arrayPoint1s.push({x: p2.x, y: p2.y});
+
+                arrayPoint2s.push({x: p1.x, y: p1.y});
+                arrayPoint2s.push({x: b.x, y: b.y});
+
+                if (Math.abs((p2.x - c.x) * (b.y - c.y) - (p2.y - c.y) * (b.x - c.x)) < 0.01) {
+                    //p2点在bc上
+                    arrayPoint1s.push({x: c.x, y: c.y});
+                    arrayPoint2s.push({x: p2.x, y: p2.y});
+                } else {
+                    //p2点在ac上
+                    arrayPoint2s.push({x: c.x, y: c.y});
+                    arrayPoint2s.push({x: p2.x, y: p2.y});
+                }
+            } else {
+                //p1点在bc上
+                //p2点在ac上
+                arrayPoint1s.push({x: b.x, y: b.y});
+                arrayPoint1s.push({x: p1.x, y: p1.y});
+                arrayPoint1s.push({x: p2.x, y: p2.y});
+
+                arrayPoint2s.push({x: p1.x, y: p1.y});
+                arrayPoint2s.push({x: c.x, y: c.y});
+                arrayPoint2s.push({x: p2.x, y: p2.y});
+            }
+            //填充第一个多边形
+            ctx.beginPath();
+            ctx.fillStyle = fillColor;
+            for (let i = 0; i < arrayPoint1s.length; i++) {
+                if (i === 0) {
+                    ctx.moveTo(arrayPoint1s[i].x - left, arrayPoint1s[i].y - top)
+                } else {
+                    ctx.lineTo(arrayPoint1s[i].x - left, arrayPoint1s[i].y - top);
+                }
+            }
+            ctx.closePath();
+            ctx.fill();
+
+            //填充第一个多边形边框
+            ctx.beginPath();
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = lineWidth;
+            for (let i = 0; i < arrayPoint1s.length; i++) {
+                if (i === 0) {
+                    ctx.moveTo(arrayPoint1s[i].x - left, arrayPoint1s[i].y - top)
+                } else {
+                    ctx.lineTo(arrayPoint1s[i].x - left, arrayPoint1s[i].y - top);
+                }
+            }
+            ctx.closePath();
+            ctx.stroke();
+            //转换到图片
+            const image1 = Utils.cacheCanvas.toDataURL("image/png");
+
+
+            ctx.clearRect(0, 0, Utils.cacheCanvas.width, Utils.cacheCanvas.height);
+            //填充第二个多边形
+
+            ctx.beginPath();
+            ctx.fillStyle = cutFillColor;
+            for (let i = 0; i < arrayPoint2s.length; i++) {
+                if (i === 0) {
+                    ctx.moveTo(arrayPoint2s[i].x - left, arrayPoint2s[i].y - top)
+                } else {
+                    ctx.lineTo(arrayPoint2s[i].x - left, arrayPoint2s[i].y - top);
+                }
+            }
+            ctx.closePath();
+            ctx.fill();
+
+            //填充第二个多边形边框
+            ctx.beginPath();
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = lineWidth;
+            for (let i = 0; i < arrayPoint2s.length; i++) {
+                if (i === 0) {
+                    ctx.moveTo(arrayPoint2s[i].x - left, arrayPoint2s[i].y - top)
+                } else {
+                    ctx.lineTo(arrayPoint2s[i].x - left, arrayPoint2s[i].y - top);
+                }
+            }
+            ctx.closePath();
+            ctx.stroke();
+            //转换到图片
+            const image2 = Utils.cacheCanvas.toDataURL("image/png");
+            return [image1, image2];
+        }
+
+    }
+
+    class TriangleShape extends Shape {
+
+        points = null;
+        strokeColor = "#098231";
+        fillColor = "#098231";
+        cutFillColor = "#098231";
+        strokeWidth = 0;
+
+
+        constructor(option) {
+            super(option);
+            this.strokeColor = option.strokeColor;
+            this.fillColor = option.fillColor;
+            this.cutFillColor = option.cutFillColor;
+            this.strokeWidth = option.strokeWidth;
+            this.points = option.points;
+        }
+
+        reset(ctx) {
+            this.hitChild = null;
+            this.child.length = 0;
+            this.isCut = false;
+            this.drawSelf(ctx);
+        }
+
+        drawSelf(ctx) {
+            ctx.beginPath();
+            ctx.fillStyle = this.fillColor;
+            ctx.moveTo(this.points[0], this.points[1]);
+            ctx.lineTo(this.points[2], this.points[3]);
+            ctx.lineTo(this.points[4], this.points[5]);
+            ctx.closePath();
+            ctx.fill();
+            ctx.beginPath();
+            ctx.strokeStyle = this.strokeColor;
+            ctx.lineWidth = this.strokeWidth;
+            ctx.moveTo(this.points[0], this.points[1]);
+            ctx.lineTo(this.points[2], this.points[3]);
+            ctx.lineTo(this.points[4], this.points[5]);
+            ctx.closePath();
+            ctx.stroke();
+
+            this.drawText("a", this.points[0], this.points[1]);
+            this.drawText("b", this.points[2], this.points[3]);
+            this.drawText("c", this.points[4], this.points[5]);
+        }
+
+
+        drawText(text, x, y) {
+            ctx.beginPath();
+            ctx.font = "40px Arial";
+            ctx.fillText(text, x, y);
+            ctx.stroke();
+        }
+
+
+        onTouchUp(event, ctx) {
+            super.onTouchUp(event, ctx);
+            this.hitChild = null;
+            if (this.isCut) {
+                this.drawChild(ctx);
+                return;
+            }
+
+            const points = this.getPoint();
+            if (points && points.length === 2) {
+                this.isCut = true;
+                const p1 = points[0];
+                const p2 = points[1];
+
+                const a = {x: this.points[0], y: this.points[1]};
+                const b = {x: this.points[2], y: this.points[3]};
+                const c = {x: this.points[4], y: this.points[5]};
+
+                const left = Math.min(Math.min(a.x, b.x), c.x);
+                const top = Math.min(Math.min(a.y, b.y), c.y);
+                const right = Math.max(Math.max(a.x, b.x), c.x);
+                const bottom = Math.max(Math.max(a.y, b.y), c.y);
+
+                const images = this.cutShape(p1, p2);
+                this.child.push(new ChildShape(left, top, right - left, bottom - top, images[0]));
+                this.child.push(new ChildShape(left, top, right - left, bottom - top, images[1]));
+                this.drawChild(ctx);
+            } else {
+                this.drawSelf(ctx);
+            }
+        }
+
+
+        cutShape(p1, p2) {
+            const a = {x: this.points[0], y: this.points[1]};
+            const b = {x: this.points[2], y: this.points[3]};
+            const c = {x: this.points[4], y: this.points[5]};
+            return Utils.toTriangleDataURL(a, b, c, p1, p2, this.fillColor, this.cutFillColor, this.strokeColor, this.strokeWidth);
+        }
+
+        getPoint() {
+            const p = {x: this.cutLine.sx, y: this.cutLine.sy};
+            const m = {x: this.cutLine.ex, y: this.cutLine.ey};
+
+            const a = {x: this.points[0], y: this.points[1]};
+            const b = {x: this.points[2], y: this.points[3]};
+            const c = {x: this.points[4], y: this.points[5]};
+
+            const array = [];
+            const point1 = this.crossPoint(a, b, p, m);
+            if (point1) {
+                array.push(point1);
+            }
+            const point2 = this.crossPoint(b, c, p, m);
+            if (point2) {
+                array.push(point2);
+            }
+            const point3 = this.crossPoint(c, a, p, m);
+            if (point3) {
+                array.push(point3);
+            }
+            return array;
+
+        }
+
+        crossPoint(a, b, p, m) {
+            const D = (a.y - b.y) * (m.x - p.x) - (b.x - a.x) * (p.y - m.y);
+            if (D === 0) {
+                //无解
+                return;
+            }
+            const D1 = (b.x * a.y - a.x * b.y) * (m.x - p.x) - (b.x - a.x) * (m.x * p.y - p.x * m.y);
+            const D2 = (a.y - b.y) * (m.x * p.y - p.x * m.y) - (p.y - m.y) * (b.x * a.y - a.x * b.y);
+            const point = {x: D1 / D, y: D2 / D};
+            if (Math.sqrt(Math.pow(point.x - a.x, 2) + Math.pow(point.y - a.y, 2)) + Math.sqrt(Math.pow(point.x - b.x, 2) + Math.pow(point.y - b.y, 2)) > Math.sqrt(Math.pow(b.x - a.x, 2) + Math.pow(b.y - a.y, 2)) ||
+                Math.sqrt(Math.pow(point.x - p.x, 2) + Math.pow(point.y - p.y, 2)) + Math.sqrt(Math.pow(point.x - m.x, 2) + Math.pow(point.y - m.y, 2)) > Math.sqrt(Math.pow(p.x - m.x, 2) + Math.pow(p.y - m.y, 2))) {
+                return;
+            }
+            return point;
+        }
+    }
+
+    class CircleShape extends Shape {
+
+        cx = 0;
+        cy = 0;
+        cr = 0;
+        strokeColor = "#098231";
+        fillColor = "#098231";
+        cutFillColor = "#098231";
+        strokeWidth = 0;
+
+        constructor(option) {
+            super(option);
+            this.cx = option.cx;
+            this.cy = option.cy;
+            this.cr = option.cr;
+            this.strokeColor = option.strokeColor;
+            this.fillColor = option.fillColor;
+            this.cutFillColor = option.cutFillColor;
+            this.strokeWidth = option.strokeWidth;
+        }
+
+        reset(ctx) {
+            this.hitChild = null;
+            this.child.length = 0;
+            this.isCut = false;
+            this.drawSelf(ctx);
+        }
+
+        onTouchUp(event, ctx) {
+            super.onTouchUp(event, ctx);
+            this.hitChild = null;
+            if (!this.isCut) {
+                const thetas = this.getTheta(this.cx, this.cy, this.cr, this.cutLine.sx, this.cutLine.sy, this.cutLine.ex, this.cutLine.ey);
+                if (thetas) {
+                    this.isCut = true;
+                    this.cutShape(ctx, thetas);
+                    this.drawChild(ctx);
+                } else {
+                    this.drawCircle(ctx, this.cx, this.cy, this.cr, this.strokeWidth, this.strokeColor, this.fillColor);
+                }
+            } else {
+                this.drawChild(ctx);
+            }
+        }
+
+        drawSelf(ctx) {
+            ctx.beginPath();
+            ctx.fillStyle = this.fillColor;
+            ctx.arc(this.cx, this.cy, this.cr - this.strokeWidth / 2, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.lineWidth = this.strokeWidth;
+            ctx.strokeStyle = this.strokeColor;
+            ctx.arc(this.cx, this.cy, this.cr - this.strokeWidth / 2, 0, 2 * Math.PI);
+            ctx.stroke();
+        }
+
+
+        cutShape(ctx, thetas) {
+            const image1 = Utils.toCircleDataURL(this.cr, thetas[0], thetas[1], this.strokeColor, this.fillColor, this.strokeWidth, false);
+            const child1 = new ChildShape(this.cx - this.cr, this.cy - this.cr, 2 * this.cr, 2 * this.cr, image1);
+            this.child.push(child1);
+
+            const image2 = Utils.toCircleDataURL(this.cr, thetas[0], thetas[1], this.strokeColor, this.cutFillColor, this.strokeWidth, true);
+            const child2 = new ChildShape(this.cx - this.cr, this.cy - this.cr, 2 * this.cr, 2 * this.cr, image2);
+            this.child.push(child2);
+        }
+
+        getTheta(cx, cy, cr, x1, y1, x2, y2) {
+
+            if (Math.sqrt(Math.pow(cx - x1, 2) + Math.pow(cy - y1, 2)) <= cr
+                || Math.sqrt(Math.pow(cx - x2, 2) + Math.pow(cy - y2, 2)) <= cr) {
+                return;
+            }
+
+            //设线段的两个端点分别是P1(x1,y1)和P2(x2,y2)，圆的圆心在P3(x3,y3)，半径为r，那么如果有交点P(x,y)的话
+            //向量P = 向量P1 +u(向量P2 − 向量P1)
+            // x = x1+u(x2−x1)
+            // y = y1+u(y2−y1)
+            //由于P也在圆上，所以
+            //(x−x3)^2+(y−y3)^2=r^2
+            // Au^2+Bu+C=0
+            // A = (x2−x1)^2+(y2−y1)^2
+            // B = 2((x2−x1)(x1−x3)+(y2−y1)(y1−y3))
+            // C = (x3)^2+(y3)^2+(x1)^2+(y1)^2−2(x3x1+y3y1)−r^2
+
+            // u = (-B ±√(B^2 - 4AC))/2A
+
+            const A = Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2);
+            const B = 2 * ((x2 - x1) * (x1 - cx) + (y2 - y1) * (y1 - cy));
+            const C = Math.pow(cx, 2) + Math.pow(cy, 2) + Math.pow(x1, 2) + Math.pow(y1, 2) - 2 * (cx * x1 + cy * y1) - Math.pow(cr, 2);
+            const t = Math.pow(B, 2) - 4 * A * C;
+            if (t <= 0) {
+                //没有交点或者只有一个交点
+                return;
+            }
+            const u1 = (-B + Math.sqrt(t)) / 2 / A;
+            const u2 = (-B - Math.sqrt(t)) / 2 / A;
+
+            if (Math.abs(u1) >= 1 || Math.abs(u2) >= 1) {
+                return;
+            }
+            const p1X = x1 + u1 * (x2 - x1);
+            const p1Y = y1 + u1 * (y2 - y1);
+
+            const p2X = x1 + u2 * (x2 - x1);
+            const p2Y = y1 + u2 * (y2 - y1);
+
+            const theta1 = Math.atan2(p1Y - cy, p1X - cx);
+            const theta2 = Math.atan2(p2Y - cy, p2X - cx);
+            return [theta1, theta2];
+        }
+    }
+
+
+    let canvas = document.getElementById("container");
+    canvas.width = document.body.clientWidth;
+    canvas.height = document.body.clientHeight;
+    let ctx = canvas.getContext("2d");
+
+    var isDown = false;
+
+    canvas.addEventListener("mousedown", (e) => {
+        isDown = true;
+        this.drawDown(e);
+    });
+    canvas.addEventListener("mousemove", (e) => {
+        if (isDown) {
+            this.drawMove(e);
+        }
+    });
+    canvas.addEventListener("mouseup", (e) => {
+        if (isDown) {
+            this.drawUp(e);
+            isDown = false;
+        }
+    });
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+    const cr = 200;
+
+
+    let shape = new CircleShape({
+        cx: cx,
+        cy: cy,
+        cr: cr,
+        strokeColor: "#0000ff",
+        fillColor: "#00128937",
+        cutFillColor: "#AAFFF04A",
+        strokeWidth: 4,
+        lineStrokeWidth: 4,
+        lineStrokeColor: "#018723",
+    });
+    shape.reset(ctx);
+
+
+    // let shape = new TriangleShape({
+    //     points: [200, 300, 800, 600, 200, 700],
+    //     strokeColor: "#0000ff",
+    //     fillColor: "#00128937",
+    //     cutFillColor: "#AAFFF04A",
+    //     strokeWidth: 4,
+    //     lineStrokeWidth: 4,
+    //     lineStrokeColor: "#018723",
+    // });
+    // shape.reset(ctx);
+
+
+    function drawDown(e) {
+        shape.onTouchDown(e, ctx);
+    }
+
+    function drawMove(e) {
+        shape.onTouchMove(e, ctx);
+    }
+
+    function drawUp(e) {
+        shape.onTouchUp(e, ctx);
+    }
+
+</script>
+</body>
+</html>
